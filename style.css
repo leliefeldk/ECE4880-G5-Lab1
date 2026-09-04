@@ -1,0 +1,323 @@
+/* ============================================================
+   Design direction: analog test-bench instrument, not a SaaS dashboard.
+   - Dark panel body (like an oscilloscope/chart recorder housing)
+   - Warm phosphor amber for live readouts, cool cyan/green for the trace lines
+   - Monospace for numeric readouts (this mirrors a real digital thermometer
+     display, not a decorative choice)
+   - Everything else stays quiet so the two readouts + graph stay the focus
+   ============================================================ */
+
+:root {
+  --housing: #1b1e1f;
+  --panel: #232729;
+  --panel-line: #34393b;
+  --text-primary: #e9e6df;
+  --text-muted: #8f9497;
+
+  --amber: #f2a641;
+  --sensor1: #5ad1c9;
+  --sensor2: #f2a641;
+  --danger: #e2584f;
+  --ok: #6fbf73;
+
+  --font-display: 'IBM Plex Mono', 'Courier New', monospace;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--housing);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  padding-bottom: 3rem;
+}
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.75rem;
+  border-bottom: 1px solid var(--panel-line);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.topbar__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.topbar__mark {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--panel-line);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.topbar__name {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.topbar__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.pill {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.pill--on strong { color: var(--ok); }
+.pill--off strong { color: var(--danger); }
+
+.unit-toggle {
+  display: flex;
+  border: 1px solid var(--panel-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.unit-toggle__btn {
+  font-family: var(--font-display);
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.unit-toggle__btn.is-active {
+  background: var(--panel-line);
+  color: var(--text-primary);
+}
+
+/* ---------- Layout ---------- */
+
+.layout {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 1.75rem;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.sensors {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.chart-panel,
+.alerts-panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .sensors { grid-template-columns: 1fr; }
+}
+
+/* ---------- Sensor cards ---------- */
+
+.sensor-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  padding: 1.25rem 1.4rem;
+}
+
+.sensor-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.sensor-card__label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.sensor-card__toggle {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 4px;
+  border: 1px solid var(--panel-line);
+  background: transparent;
+  color: var(--ok);
+  cursor: pointer;
+}
+
+.sensor-card__toggle.is-on { color: var(--ok); border-color: var(--ok); }
+.sensor-card__toggle:not(.is-on) { color: var(--text-muted); }
+
+.sensor-card__reading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-height: 3.2rem;
+}
+
+.sensor-card__value {
+  font-family: var(--font-display);
+  font-size: 2.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--amber);
+}
+
+.sensor-card__unit {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+.sensor-card__status {
+  min-height: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.sim-toggle {
+  display: block;
+  margin-top: 0.85rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sim-toggle input { margin-right: 0.4rem; }
+
+/* ---------- Chart panel ---------- */
+
+.chart-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  padding: 1.25rem 1.4rem 1rem;
+}
+
+.chart-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.chart-panel__head h2,
+.alerts-panel h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.swatch--s1 { background: var(--sensor1); }
+.swatch--s2 { background: var(--sensor2); }
+.swatch--gap { background: var(--panel-line); border: 1px dashed var(--text-muted); }
+.swatch--clip { background: var(--danger); }
+
+#chart {
+  width: 100%;
+  height: 320px;
+  display: block;
+}
+
+/* ---------- Alerts panel ---------- */
+
+.alerts-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  padding: 1.25rem 1.4rem;
+}
+
+.alerts-panel__hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0.4rem 0 1rem;
+  max-width: 60ch;
+}
+
+.alerts-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.alerts-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.alerts-form input {
+  font-family: var(--font-body);
+  background: var(--housing);
+  border: 1px solid var(--panel-line);
+  border-radius: 5px;
+  color: var(--text-primary);
+  padding: 0.5rem 0.6rem;
+}
+
+.alerts-form button {
+  background: var(--amber);
+  border: none;
+  border-radius: 5px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  color: #1b1e1f;
+  cursor: pointer;
+  height: fit-content;
+}
+
+.alert-log {
+  margin-top: 0.9rem;
+  font-size: 0.8rem;
+  color: var(--danger);
+  min-height: 1.1rem;
+}

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dual Thermometer Monitor — Prototype</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__title">
+      <span class="topbar__mark">TH-2</span>
+      <span class="topbar__name">Dual Thermometer Monitor</span>
+    </div>
+
+    <div class="topbar__controls">
+      <!-- Overall "third box" power switch. The handout requires the app to show
+           "no data available" whenever this is off. -->
+      <button id="boxPower" class="pill pill--on" data-state="on">
+        Third box: <strong>ON</strong>
+      </button>
+
+      <!-- C/F toggle — required, default value is left to you (defaulting to C here). -->
+      <div class="unit-toggle" role="group" aria-label="Temperature unit">
+        <button id="unitC" class="unit-toggle__btn is-active" data-unit="C">°C</button>
+        <button id="unitF" class="unit-toggle__btn" data-unit="F">°F</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ===== Sensor readout cards ===== -->
+    <section class="sensors" aria-label="Sensor readouts">
+
+      <article class="sensor-card" data-sensor="1">
+        <div class="sensor-card__head">
+          <span class="sensor-card__label">Sensor 1</span>
+          <button class="sensor-card__toggle is-on" data-action="toggle-sensor" data-sensor="1">
+            ON
+          </button>
+        </div>
+        <div class="sensor-card__reading">
+          <span class="sensor-card__value" data-el="value-1">22.0</span>
+          <span class="sensor-card__unit" data-el="unit-1">°C</span>
+        </div>
+        <div class="sensor-card__status" data-el="status-1"></div>
+
+        <!-- Simulation-only control: lets you fake an "unplugged" sensor for testing
+             the error states. Remove once wired to a real sensor feed. -->
+        <label class="sim-toggle">
+          <input type="checkbox" checked data-action="toggle-plugged" data-sensor="1" />
+          Sensor plugged in (simulated)
+        </label>
+      </article>
+
+      <article class="sensor-card" data-sensor="2">
+        <div class="sensor-card__head">
+          <span class="sensor-card__label">Sensor 2</span>
+          <button class="sensor-card__toggle is-on" data-action="toggle-sensor" data-sensor="2">
+            ON
+          </button>
+        </div>
+        <div class="sensor-card__reading">
+          <span class="sensor-card__value" data-el="value-2">18.4</span>
+          <span class="sensor-card__unit" data-el="unit-2">°C</span>
+        </div>
+        <div class="sensor-card__status" data-el="status-2"></div>
+
+        <label class="sim-toggle">
+          <input type="checkbox" checked data-action="toggle-plugged" data-sensor="2" />
+          Sensor plugged in (simulated)
+        </label>
+      </article>
+
+    </section>
+
+    <!-- ===== Scrolling chart-recorder graph ===== -->
+    <section class="chart-panel" aria-label="Temperature history">
+      <div class="chart-panel__head">
+        <h2>Last 300 seconds</h2>
+        <div class="chart-legend">
+          <span class="legend-item"><i class="swatch swatch--s1"></i>Sensor 1</span>
+          <span class="legend-item"><i class="swatch swatch--s2"></i>Sensor 2</span>
+          <span class="legend-item"><i class="swatch swatch--gap"></i>Missing data</span>
+          <span class="legend-item"><i class="swatch swatch--clip"></i>Off-scale</span>
+        </div>
+      </div>
+      <canvas id="chart" width="1000" height="360"></canvas>
+    </section>
+
+    <!-- ===== Alert configuration ===== -->
+    <section class="alerts-panel" aria-label="Alert settings">
+      <h2>Alert settings</h2>
+      <p class="alerts-panel__hint">
+        A text/email is sent when a reading goes above the max or below the min.
+        (This form only updates local state in this prototype — see app.js for
+        where to wire it to a real notification service.)
+      </p>
+
+      <form id="alertForm" class="alerts-form">
+        <label>
+          Max temp (°C)
+          <input type="number" id="maxTemp" value="45" step="0.1" />
+        </label>
+        <label>
+          Min temp (°C)
+          <input type="number" id="minTemp" value="5" step="0.1" />
+        </label>
+        <label>
+          Phone number or email
+          <input type="text" id="alertContact" placeholder="e.g. you@example.com" />
+        </label>
+        <button type="submit">Save alert settings</button>
+      </form>
+
+      <div id="alertLog" class="alert-log" aria-live="polite"></div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
