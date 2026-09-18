@@ -1,11 +1,11 @@
 /* ==========================================================================
-   Dummy front-end for the dual-thermometer web interface.
+   Dual-thermometer web interface, connected to a real ESP32 over a
+   persistent WebSocket connection at /ws.
 
-   This file fakes sensor data locally with setInterval so you can see the
-   full UI behave correctly BEFORE any real backend/hardware exists. When
-   you're ready to connect to a real Node backend, replace the block marked
-   "FAKE DATA SOURCE" with your real data source (WebSocket message handler
-   or a fetch() poll), and leave the rendering functions as-is.
+   Data flow: the ESP32 pushes a reading once/second to the server, which
+   relays it here immediately (no polling delay). A once-per-second local
+   tick turns the latest known value into a chart history point so the
+   graph's timing stays steady regardless of network jitter.
 
    Places marked TODO / DECISION are exactly the points the assignment
    handout leaves open to you — this file makes *a* choice for each so the
@@ -22,8 +22,8 @@ const state = {
   unit: 'C', // DECISION: default unit on load. Handout doesn't specify.
   boxOn: true,
   sensors: {
-    1: { on: true, plugged: true, value: 22.0, history: [] },
-    2: { on: true, plugged: true, value: 18.0, history: [] },
+    1: { on: true, value: 22.0, latestValue: 22.0, latestStatus: 'ok', lastUpdate: null, history: [] },
+    2: { on: true, value: 18.0, latestValue: 18.0, latestStatus: 'ok', lastUpdate: null, history: [] },
   },
   alerts: {
     max: 45,
@@ -85,60 +85,121 @@ document.querySelectorAll('[data-action="toggle-sensor"]').forEach((btn) => {
     sensor.on = !sensor.on;
     btn.textContent = sensor.on ? 'ON' : 'OFF';
     btn.classList.toggle('is-on', sensor.on);
+
+    // Relay the toggle to the ESP32 over the same socket the readings arrive
+    // on. DECISION: this assumes a single connected device controlling both
+    // sensors; see the server-side TODO if you add more devices.
+    sendToDevice({ type: 'command', sensorId: id, action: sensor.on ? 'on' : 'off' });
   });
 });
 
 document.querySelectorAll('[data-action="toggle-plugged"]').forEach((input) => {
-  input.addEventListener('change', () => {
-    const id = input.dataset.sensor;
-    state.sensors[id].plugged = input.checked;
-  });
+  // This checkbox was only meaningful in the fake-data prototype. Now that
+  // real status comes from the ESP32 over the WebSocket, hide/remove these
+  // controls from index.html once you're testing against real hardware.
+  input.disabled = true;
+  input.parentElement.style.opacity = '0.4';
 });
 
-el.alertForm.addEventListener('submit', (e) => {
+el.alertForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   state.alerts.max = parseFloat(el.maxTemp.value);
   state.alerts.min = parseFloat(el.minTemp.value);
   state.alerts.contact = el.alertContact.value.trim();
 
-  // TODO: this is where you'd call your backend endpoint to persist these
-  // thresholds and the contact info, e.g.
-  //   fetch('/api/alerts', { method: 'POST', body: JSON.stringify(state.alerts) })
-  el.alertLog.textContent = `Saved: alerts fire outside ${state.alerts.min}–${state.alerts.max}°C` +
-    (state.alerts.contact ? ` → ${state.alerts.contact}` : ' (no contact set yet)');
+  try {
+    await fetch('/api/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.alerts),
+    });
+    el.alertLog.textContent = `Saved: alerts fire outside ${state.alerts.min}–${state.alerts.max}°C` +
+      (state.alerts.contact ? ` → ${state.alerts.contact}` : ' (no contact set yet)');
+  } catch (err) {
+    el.alertLog.textContent = 'Could not save alert settings — is the server running?';
+  }
 });
 
 // ---------------------------------------------------------------------------
-// FAKE DATA SOURCE
-// Replace this whole block with your real data feed when ready.
+// WebSocket connection to the server. The ESP32 pushes readings to the
+// server, which relays them here the instant they arrive -- no polling
+// delay. This just stores the latest value per sensor; a once/second local
+// tick (below) turns that into chart history points and re-renders, so the
+// graph's timing stays steady even if network messages arrive a little
+// unevenly.
 // ---------------------------------------------------------------------------
 
-function nextFakeReading(sensor) {
-  // Random walk so the trace looks organic rather than pure noise.
-  const drift = (Math.random() - 0.5) * 1.2;
-  let next = sensor.value + drift;
-  next = Math.max(-5, Math.min(65, next)); // keep it within a plausible range
-  return Math.round(next * 10) / 10;
+function connectSocket() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${proto}://${location.host}/ws`);
+
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify({ type: 'hello', role: 'browser' }));
+  });
+
+  socket.addEventListener('message', (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (msg.type !== 'reading') return;
+
+    const sensor = state.sensors[msg.sensorId];
+    if (!sensor) return;
+
+    sensor.latestValue = msg.value;
+    sensor.latestStatus = msg.status;
+    sensor.lastUpdate = Date.now();
+  });
+
+  // DECISION: reconnect after a fixed 1s delay. For a lab prototype this is
+  // fine; a real deployment usually backs off (1s, 2s, 4s...) so a dead
+  // server isn't hammered with reconnect attempts.
+  socket.addEventListener('close', () => setTimeout(connectSocket, 1000));
+  socket.addEventListener('error', () => socket.close());
+
+  state.socket = socket;
 }
+
+function sendToDevice(payload) {
+  if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+    state.socket.send(JSON.stringify(payload));
+  }
+}
+
+connectSocket();
+
+// ---------------------------------------------------------------------------
+// Once-per-second local tick: turns the latest known value per sensor into a
+// chart history point, independent of exactly when the last WebSocket
+// message arrived. Also decides "missing" when a sensor hasn't reported in
+// a while, in case the device disconnects without the server noticing yet.
+// ---------------------------------------------------------------------------
+
+const STALE_MS = 2500; // DECISION: tolerate a bit more than one missed report
 
 function tick() {
   for (const [id, sensor] of Object.entries(state.sensors)) {
     let status = 'ok';
     let value = sensor.value;
 
+    const stale = !sensor.lastUpdate || Date.now() - sensor.lastUpdate > STALE_MS;
+
     if (!state.boxOn) {
       status = 'missing'; // "no data available" case
-    } else if (!sensor.plugged) {
-      status = 'missing'; // "unplugged sensor" case -- see note below
-    } else if (!sensor.on) {
-      status = 'missing'; // sensor turned off -- still no live reading to show
+    } else if (stale) {
+      status = 'missing'; // haven't heard from the device recently enough
+    } else if (sensor.latestStatus === 'unplugged' || sensor.latestStatus === 'off') {
+      status = 'missing'; // device itself reported this sensor as unavailable
     } else {
-      value = nextFakeReading(sensor);
+      value = sensor.latestValue;
       sensor.value = value;
-      if (value > RANGE_C.max || value < RANGE_C.min) {
+      if (typeof value === 'number' && (value > RANGE_C.max || value < RANGE_C.min)) {
         status = 'offscale'; // outside the graph's fixed 10-50°C window
       }
-      checkAlerts(id, value);
+      if (status === 'ok') checkAlertDisplay(id, value);
     }
 
     sensor.history.push({ value, status });
@@ -155,9 +216,12 @@ function tick() {
 // render as one "missing" gap style on the chart, while the text readout
 // keeps them separate. Revisit this if your rubric wants finer-grained gaps.
 
-function checkAlerts(sensorId, value) {
+// The server (which holds the Twilio/Resend keys) is what actually decides
+// whether to fire a text/email -- it does that check itself when a reading
+// comes in over the socket. This just updates the on-page alert log so the
+// person watching the browser sees it too.
+function checkAlertDisplay(sensorId, value) {
   if (value > state.alerts.max || value < state.alerts.min) {
-    // TODO: replace with a real call to an SMS/email API (e.g. Twilio, SMTP).
     el.alertLog.textContent =
       `ALERT: Sensor ${sensorId} reading ${value}°C is outside ${state.alerts.min}–${state.alerts.max}°C`;
   }
@@ -181,13 +245,18 @@ function render() {
 
     unitEl.textContent = state.unit === 'C' ? '°C' : '°F';
 
+    const stale = !sensor.lastUpdate || Date.now() - sensor.lastUpdate > STALE_MS;
+
     if (!state.boxOn) {
       valueEl.textContent = '—';
       statusEl.textContent = 'No data available (third box is off)';
-    } else if (!sensor.plugged) {
+    } else if (stale) {
+      valueEl.textContent = '—';
+      statusEl.textContent = 'No data available (device not connected)';
+    } else if (sensor.latestStatus === 'unplugged') {
       valueEl.textContent = '—';
       statusEl.textContent = 'Unplugged sensor';
-    } else if (!sensor.on) {
+    } else if (sensor.latestStatus === 'off') {
       valueEl.textContent = '—';
       statusEl.textContent = `Sensor ${id} off`;
     } else {
